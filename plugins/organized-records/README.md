@@ -1,74 +1,64 @@
-# 整理文件记录
+# 整理文件记录（organized-records）
 
-添加种子时通过 SDK 的 `torrent.adding` 钩子缓存番剧名和 RSS ID；整理完成（`torrent.organized`）后，将正片与字幕的路径、番剧信息、原始事件和处理状态保存到插件自己的 SQLite 数据库，供外部程序查询和处理。
+AutoBangumi 4.0 插件。收到 `torrent.organized` 事件后，把正片和字幕的整理结果写入 SQLite，供外部程序查询和标记处理状态。
 
-- 将事件中文件的完整路径原样保存到 `path`，不截断、不按前缀过滤
-- 每个文件一条记录，以 `path` 为主键；重复路径直接跳过，已有内容、状态和时间均不改变
-- 新记录的 `status` 为 `0`（待处理），由外部程序处理后改为 `1`（已完成）
+## 安装和配置
 
-## 保存的记录
+1. 将安装包解压到 AutoBangumi 配置目录下的 `plugins/local/organized-records/`，确保 `plugin.toml` 直接位于该目录。
+2. 在「设置 → 插件」开启「允许未签名插件」。
+3. 在「设置 → 用户与访问控制 → API 令牌」创建一个 `scope=api` 的令牌。在插件设置中填写以下配置，然后启用插件。
 
-插件 ID 为 `organized-records`。数据库位于 `ctx.data_dir/data.db`，对应 AB 配置目录下的 `plugin-data/organized-records/data.db`。插件启动时自动创建数据库、`organized_files` 表和状态索引。
+| 设置 | 填写内容 |
+| --- | --- |
+| AutoBangumi API 地址（`api_base_url`） | 默认 `http://127.0.0.1:7892/api/v1`。自定义时填写插件能访问的完整 API 基础地址。 |
+| AutoBangumi API 令牌（`api_token`） | 必填，填令牌本身，不加 `Bearer` 前缀。 |
 
-| 字段 | 类型 | 内容 |
+## 数据库
+
+插件启用后在 AutoBangumi 配置目录下创建 `plugin-data/organized-records/data.db`，表名为 `organized_files`。
+
+| 字段 | 类型 | 含义 |
 | --- | --- | --- |
-| `path` | TEXT PRIMARY KEY | 事件中文件的原始完整路径 |
-| `bangumi_name` | TEXT | 添加种子时缓存的番剧官方名称；取不到时留空并记录 ERROR 日志，不从路径推断 |
-| `bangumi_id` | INTEGER | 整理完成事件的番剧 ID |
-| `rss_id` | INTEGER | 添加种子时的 RSS ID；未捕获或有多个不同 RSS ID 时为空 |
-| `status` | INTEGER | `0` 待处理、`1` 已完成，默认 `0` |
-| `created_at` | DATETIME | 首次入库时间，默认 `CURRENT_TIMESTAMP` |
-| `updated_at` | DATETIME | 初始默认 `CURRENT_TIMESTAMP`，后续由外部程序更新 |
-| `event_data` | TEXT | 完整整理完成事件的 JSON，包含 `torrent_hash`、`bangumi_id`、`downloader_id`、`files` |
+| `file_path` | TEXT | 下载器侧的原始路径，主键 |
+| `file_kind` | TEXT | `media`（正片）或 `subtitle`（字幕） |
+| `bangumi_id` | INTEGER | 事件中的番剧 ID |
+| `bangumi_name` | TEXT | 从路径提取的番剧名，无法提取时为 `NULL` |
+| `rss_id` | INTEGER | 匹配到的 RSS 订阅 ID，未取得时为 `NULL` |
+| `torrent_hash` | TEXT | 种子哈希 |
+| `downloader_id` | TEXT | 下载器实例 ID |
+| `status` | INTEGER | `0` 待处理（默认），`1` 已完成 |
+| `created_at` | DATETIME | 首次入库时间 |
+| `updated_at` | DATETIME | 初始等于入库时间，由外部程序更新 |
 
-时间使用 UTC，格式为 `YYYY-MM-DD HH:MM:SS`。默认时间只在插入时填写，修改状态时需主动更新 `updated_at`。
+时间字段默认使用 SQLite 的 `CURRENT_TIMESTAMP`（UTC，`YYYY-MM-DD HH:MM:SS`）。
 
-## 外部程序处理
-
-查询待处理文件：
+查询待处理记录：
 
 ```sql
-SELECT path, event_data, created_at, updated_at
+SELECT file_path, file_kind, bangumi_id, bangumi_name, rss_id,
+       torrent_hash, downloader_id, created_at, updated_at
 FROM organized_files
 WHERE status = 0
-ORDER BY created_at, path;
+ORDER BY created_at, file_path;
 ```
-
-处理完成后，使用参数绑定传入路径：
 
 ```sql
 UPDATE organized_files
 SET status = 1, updated_at = CURRENT_TIMESTAMP
-WHERE path = ?;
+WHERE file_path = ?;
 ```
 
-数据库启用 WAL。外部程序应使用 SQLite 连接读写并设置合理的锁等待时间，备份使用 SQLite backup API。
-插件只保存实际收到的事件，不回填历史记录；启动时仅创建当前表结构，不修改已有表结构。
+数据库使用 WAL 模式。外部程序连接时应设置合理的锁等待时间；在线备份请使用 SQLite backup API。
 
-## 安装
+## 测试和打包
 
-```bash
-cp -r organized-records config/plugins/local/
-```
+从 AutoBangumi 上游 Release 获取 `autobangumi_sdk-0.6.0-py3-none-any.whl`，放到本仓库的 `plugins/` 目录。SDK 不从 PyPI 安装。使用 Python 3.14 或更新版本，在仓库根目录执行：
 
-在「设置 → 插件」中开启「允许未签名插件」，启用插件即可。
-
-## 测试
-
-```bash
-cd organized-records
-uv add ../autobangumi_sdk-0.6.0-py3-none-any.whl   # SDK 不在 PyPI：换成下载的轮子的实际路径
+```sh
+cd plugins/organized-records
 uv run pytest
+uv run ab-plugin validate .
+uv run ab-plugin pack .
 ```
 
-## 打包
-
-从本仓库根目录执行：
-
-```bash
-.venv/bin/python scripts/pack_plugin.py
-```
-
-每次打包自动递增补丁版本（例如 `0.1.1` → `0.1.2`），同步更新 `plugin.toml` 和 `pyproject.toml`，
-校验通过后输出到 `dist/`。已有安装包保留；校验或打包失败时不会更新源文件中的版本号。
-后续发布统一使用此命令；SDK 原生的 `ab-plugin pack` 不负责自动递增版本。
+安装包输出到 `dist/organized-records-<版本号>.zip`。
