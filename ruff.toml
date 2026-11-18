@@ -1,0 +1,6 @@
+# Shared formatting rules for all plugins, including plugins with a pyproject.toml.
+line-length = 88
+target-version = "py314"
+include = ["*.py", "*.pyi"]
+extend-exclude = ["vendor", "node_modules", "build", "dist", ".venv", "venv"]
+force-exclude = true
