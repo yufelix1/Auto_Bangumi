@@ -1,0 +1,9 @@
+[plugin]
+id = "organized-records"
+name = "整理文件记录"
+version = "0.2.1"
+description = "监听整理完成事件，将文件路径、番剧名、番剧及RSS ID、原始事件和处理状态保存至 SQLite。"
+
+sdk = ">=0.5,<1"
+entry = "organized_records:OrganizedRecords"
+permissions = ["filesystem"]

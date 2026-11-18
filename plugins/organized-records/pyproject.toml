@@ -1,0 +1,15 @@
+[project]
+name = "ab-plugin-organized-records"
+version = "0.2.1"
+requires-python = ">=3.14"
+dependencies = ["autobangumi-sdk==0.6.0"]
+
+[tool.uv.sources]
+autobangumi-sdk = { path = "../autobangumi_sdk-0.6.0-py3-none-any.whl" }
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

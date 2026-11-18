@@ -220,6 +220,7 @@ dist-ssr
 # test file
 test.*
 !webui/e2e/fixtures/test.ts
+/plugins/*/tests/
 
 # local config
 /backend/config/
